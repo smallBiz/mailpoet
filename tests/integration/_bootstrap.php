@@ -1,5 +1,7 @@
 <?php
 
+use MailPoet\Config\Database;
+
 if ((boolean)getenv('MULTISITE') === true) {
   // REQUEST_URI needs to be set for WP to load the proper subsite where MailPoet is activated
   $_SERVER['REQUEST_URI'] = '/' . getenv('WP_TEST_MULTISITE_SLUG');
@@ -67,81 +69,61 @@ $kernel->init(
   ]
 );
 
-// This hook throws an 'Undefined index: SERVER_NAME' error in CLI mode,
-// the action is called in ConflictResolverTest
-remove_filter('admin_print_styles', 'wp_resource_hints', 1);
-
-// Unset filters, which woocommerce hooks onto and causes integration tests
-// to fail, because some WC's functions can't be serialized
-$woocommerceBlacklistFilters = [
-  'init',
-  'after_switch_theme',
-  'after_setup_theme',
-  'switch_blog',
-  'shutdown',
-];
-foreach ($woocommerceBlacklistFilters as $woocommerceBlacklistFilter) {
-  unset($GLOBALS['wp_filter'][$woocommerceBlacklistFilter]);
-};
-
 abstract class MailPoetTest extends \Codeception\TestCase\Test {
-  protected $backupGlobals = true;
-  protected $backupGlobalsBlacklist = [
-    'app',
-    'post',
-    'authordata',
-    'currentday',
-    'currentmonth',
-    'page',
-    'pages',
-    'multipage',
-    'more',
-    'numpages',
-    'is_iphone',
-    'is_chrome',
-    'is_safari',
-    'is_NS4',
-    'is_opera',
-    'is_macIE',
-    'is_winIE',
-    'is_gecko',
-    'is_lynx',
-    'is_IE',
-    'is_apache',
-    'is_IIS',
-    'is_iis7',
-    'wp_version',
-    'wp_db_version',
-    'tinymce_version',
-    'manifest_version',
-    'required_php_version',
-    'required_mysql_version',
-    'super_admins',
-    'wp_query',
-    'wp_rewrite',
-    'wp',
-    'wpdb',
-    'wp_locale',
-    'wp_admin_bar',
-    'wp_roles',
-    'wp_meta_boxes',
-    'wp_registered_sidebars',
-    'wp_registered_widgets',
-    'wp_registered_widget_controls',
-    'wp_registered_widget_updates',
-    'pagenow',
-    'post_type',
-    'allowedposttags',
-    'allowedtags',
-    'menu',
-    'woocommerce',
-  ];
+  protected $backupGlobals = false;
   protected $backupStaticAttributes = false;
-  protected $runTestInSeparateProcess = false;
-  protected $preserveGlobalState = false;
-  protected $inIsolation = false;
 
-  function _before() {
+  function runBare() {
+    $pipe_result = tempnam('/tmp', 'mailpoet-integration-tests-result');
+    $pipe_exception = tempnam('/tmp', 'mailpoet-integration-tests-exception');
+
+    \ORM::resetConfig();
+    \ORM::resetDb();
+
+    $pid = pcntl_fork();
+    if ($pid === -1) {
+      throw new \Exception();
+    }
+
+    // parent
+    if ($pid > 0) {
+      pcntl_wait($status);
+      $exception = file_get_contents($pipe_exception);
+      if ($exception) {
+        $e = unserialize($exception);
+        throw $e;
+      }
+      return unserialize(file_get_contents($pipe_result));
+    }
+
+    // child
+    try {
+      $database = new Database();
+      $database->init();
+      $result = parent::runBare();
+      file_put_contents($pipe_result, serialize($result));
+    } catch (\Throwable $e) {
+      if ($e instanceof \PDOException && !is_int($e->getCode())) {
+        $reflectionClass = new \ReflectionClass($e);
+        $reflectionProperty = $reflectionClass->getProperty('code');
+        $reflectionProperty->setAccessible(true);
+        $reflectionProperty->setValue($e, (int) $reflectionProperty->getValue($e));
+        $reflectionProperty->setAccessible(false);
+      }
+      $fe = \Symfony\Component\Debug\Exception\FlattenException::create($e);
+      $reflectionClass = new \ReflectionClass($e instanceof \Exception ? 'Exception' : 'Error');
+      $reflectionProperty = $reflectionClass->getProperty('trace');
+      $reflectionProperty->setAccessible(true);
+      $reflectionProperty->setValue($e, $fe->getTrace());
+      $reflectionProperty->setAccessible(false);
+      file_put_contents($pipe_exception, serialize($e));
+    } finally {
+      posix_kill(getmypid(), SIGKILL);
+    }
+  }
+
+  function setUp() {
+    parent::setUp();
     \MailPoet\Settings\SettingsController::resetCache();
   }
 

@@ -104,7 +104,7 @@ jobs:
   php5_integration_and_js:
     working_directory: /home/circleci/mailpoet
     docker:
-    - image: mailpoet/wordpress:5.6.30_20180417.1
+    - image: mailpoet/wordpress:5.6_20190716.1-pcntl
     - image: circleci/mysql:5.7-ram
     environment:
       TZ: /usr/share/zoneinfo/Etc/UTC
@@ -320,7 +320,7 @@ jobs:
   php7_integration:
     working_directory: /home/circleci/mailpoet
     docker:
-      - image: mailpoet/wordpress:7.3_20190306.1
+      - image: mailpoet/wordpress:7.3_20190716.1-pcntl
       - image: circleci/mysql:5.7-ram
     environment:
       TZ: /usr/share/zoneinfo/Etc/UTC
@@ -351,7 +351,7 @@ jobs:
   php7_integration_multisite:
     working_directory: /home/circleci/mailpoet
     docker:
-      - image: mailpoet/wordpress:7.3_20190306.1
+      - image: mailpoet/wordpress:7.3_20190716.1-pcntl
       - image: circleci/mysql:5.7-ram
     environment:
       TZ: /usr/share/zoneinfo/Etc/UTC
